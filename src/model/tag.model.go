@@ -14,10 +14,12 @@ type Tag struct {
 	Name string `db:"name" json:"name"`
 	// Color of Tag
 	// in: string
-	Color string `db:"color" json:"color"`
+	Color  string `db:"color" json:"color"`
+	UserId string `db:"userid" json:"userId"`
 }
 
 type TagService interface {
-	GetAllTags() ([]Tag, error)
+	GetAllTags(userId int) ([]Tag, error)
 	CreateManyTags(tags []dto.Tag) error
+	CreateNewTag(tag dto.Tag) error
 }

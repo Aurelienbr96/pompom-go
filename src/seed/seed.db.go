@@ -21,12 +21,10 @@ func generateTasks(row int) []dto.Task {
 	return createdTasks
 }
 
-func generateTags(row int) []dto.Tag {
-	createdTag := make([]dto.Tag, row)
-	for i := 0; i < len(createdTag); i++ {
-		createdTag[i] = dto.Tag{
-			Name: "name" + strconv.Itoa(i), Color: strconv.Itoa(i),
-		}
+func generateTag(name string, color string) dto.Tag {
+
+	createdTag := dto.Tag{
+		Name: name, Color: color,
 	}
 	return createdTag
 }
@@ -51,11 +49,16 @@ func (c TaskService) CreateTasks(i int) {
 	log.Printf("Tasks")
 }
 
-func (c TaskService) CreateTags(i int) {
-	tasks := generateTags(i)
-	log.Printf("Task details: %+v", tasks)
+func (c TaskService) CreateTags() {
+	reactNative := generateTag("React Native", "#B6C867")
+	golang := generateTag("Golang", "#00CECB")
+	vuejs := generateTag("vuejs", "#1B998B")
+	algorithm := generateTag("algorithm", "#534D56")
+	reactjs := generateTag("reactjs", "#FCB0B3")
+	tags := [...]dto.Tag{reactNative, golang, vuejs, algorithm, reactjs}
+	tagsSlice := tags[:]
 	tagService := services.NewTagService(c.DB)
-	err := tagService.CreateManyTags(tasks)
+	err := tagService.CreateManyTags(tagsSlice)
 	if err != nil {
 		log.Printf("error:  %+v", err)
 	}
@@ -75,6 +78,25 @@ func (c TaskService) DeleteTasks() {
 // create tests
 // auth ?
 
+/*
+
+tag (
+	id SERIAL PRIMARY KEY,
+	name VARCHAR(255) NOT NULL,
+	color VARCHAR(255) NOT NULL
+)
+
+
+task (
+	id SERIAL PRIMARY KEY,
+	duration INT NOT NULL,
+	name VARCHAR(255),
+	description VARCHAR(255),
+	tagId INT,
+	FOREIGN KEY (tagId) REFERENCES tag(id)
+)
+*/
+
 func (c TaskService) CreateDatabase() {
 	_, err := c.DB.Exec(`CREATE TABLE tag (
 							id SERIAL PRIMARY KEY,
@@ -84,14 +106,15 @@ func (c TaskService) CreateDatabase() {
 	if err != nil {
 		log.Printf("An error happened when trying to create tag table  %+v", err)
 	}
-	c.DB.Exec(`CREATE TABLE task (
+	_, err2 := c.DB.Exec(`CREATE TABLE task (
 					id SERIAL PRIMARY KEY,
 					duration INT NOT NULL, 
 					name VARCHAR(255), 
+					date DATE NOT NULL,
 					description VARCHAR(255), 
 					tagId INT, 
 					FOREIGN KEY (tagId) REFERENCES tag(id))`)
-	if err != nil {
+	if err2 != nil {
 		log.Printf("An error happened when trying to create task table  %+v", err)
 	}
 }

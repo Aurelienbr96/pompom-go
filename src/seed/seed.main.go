@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	taskServices "pompom/go/src/services"
-	"strconv"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -38,7 +37,7 @@ func Seed(db *sqlx.DB) {
 	seed := NewSeedService(taskService, db)
 	switch os.Args[1] {
 	case "seed":
-		var val int
+		/* 	var val int
 		if len(os.Args) > 2 {
 			var err error
 			val, err = strconv.Atoi(os.Args[2])
@@ -48,10 +47,10 @@ func Seed(db *sqlx.DB) {
 			}
 		} else {
 			val = 5 // Default to 5
-		}
+		} */
 
-		// seed.CreateTags(val)
-		seed.CreateTasks(val)
+		seed.CreateTags()
+		// seed.CreateTasks(val)
 	case "deleteTasks":
 		seed.DeleteTasks()
 	case "deleteBase":

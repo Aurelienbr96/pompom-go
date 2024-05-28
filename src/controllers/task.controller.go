@@ -3,14 +3,11 @@ package controllers
 import (
 	"encoding/json"
 	"net/http"
-	dto "pompom/go/src/dto"
+	"pompom/go/src/dto"
 	model "pompom/go/src/model"
 	"strconv"
+	"time"
 )
-
-func setJsonApplicationHeader(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-}
 
 type TaskController struct {
 	Service model.TaskService
@@ -21,9 +18,13 @@ func NewTaskController(s model.TaskService) *TaskController {
 }
 
 func (tc TaskController) GetAllTasksController(w http.ResponseWriter, r *http.Request) {
-
-	setJsonApplicationHeader(w)
-	tasks, err := tc.Service.GetAll()
+	idStr := r.PathValue("userId")
+	userId, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+	tasks, err := tc.Service.GetAll(userId)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -35,7 +36,6 @@ func (tc TaskController) GetAllTasksController(w http.ResponseWriter, r *http.Re
 
 func (tc TaskController) GetTask(w http.ResponseWriter, r *http.Request) {
 
-	setJsonApplicationHeader(w)
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -52,15 +52,34 @@ func (tc TaskController) GetTask(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type TaskToCreate struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Duration    int64  `json:"duration"`
+	TagId       int64  `json:"tagId"`
+	Date        int64  `json:"date"`
+}
+
+func ConvertMilliToTime(milliseconds int64) time.Time {
+	return time.Unix(milliseconds/1000, (milliseconds%1000)*1000000)
+}
+
 func (tc TaskController) CreateTask(w http.ResponseWriter, r *http.Request) {
-	setJsonApplicationHeader(w)
-	var t dto.Task
+	var t TaskToCreate
 	err := json.NewDecoder(r.Body).Decode(&t)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	createdTask, err := tc.Service.Create(t)
+	taskDate := ConvertMilliToTime(t.Date)
+	taskToCreate := dto.Task{
+		Date:        taskDate,
+		Name:        t.Name,
+		Description: t.Description,
+		Duration:    t.Duration,
+		TagId:       t.TagId,
+	}
+	createdTask, err := tc.Service.Create(taskToCreate)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
