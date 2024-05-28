@@ -16,9 +16,10 @@ func NewTagService(db *sqlx.DB) model.TagService {
 	return &TagDb{DB: db}
 }
 
-func (c *TagDb) GetAllTags() ([]model.Tag, error) {
+func (c *TagDb) GetAllTags(userId int) ([]model.Tag, error) {
 	tags := []model.Tag{}
-	err := c.DB.Select(&tags, "SELECT * FROM tag")
+	query := "SELECT * FROM tag WHERE userId = $1"
+	err := c.DB.Select(&tags, query, userId)
 	if err != nil {
 		log.Printf("Error during GetAllTags query: %v", err)
 		log.Printf("Tags error: %+v", tags)
@@ -26,6 +27,22 @@ func (c *TagDb) GetAllTags() ([]model.Tag, error) {
 	}
 	return tags, err
 }
+
+func (c *TagDb) CreateNewTag(tag dto.Tag) error {
+	sqlStatement := `INSERT INTO tag (name, color) VALUES (:name, :color) RETURNING *`
+	namedStmt, err := c.DB.PrepareNamed(sqlStatement)
+	if err != nil {
+		log.Printf("Failed to prepare named statement: %s", err)
+		return err
+	}
+	defer namedStmt.Close()
+	namedStmt.Exec(tag)
+	return nil
+}
+
+/* func (c *TagDb) DeleteTag(id int) error {
+	sqlStatement := `DELETE ...`
+} */
 
 func (c *TagDb) CreateManyTags(tags []dto.Tag) error {
 	tx, err := c.DB.Beginx()
@@ -40,8 +57,8 @@ func (c *TagDb) CreateManyTags(tags []dto.Tag) error {
 	}
 	defer stmt.Close()
 
-	for _, task := range tags {
-		createdTag, err := stmt.Exec(task)
+	for _, tag := range tags {
+		createdTag, err := stmt.Exec(tag)
 		if err != nil {
 			tx.Rollback()
 			return err
@@ -51,7 +68,7 @@ func (c *TagDb) CreateManyTags(tags []dto.Tag) error {
 			tx.Rollback()
 			return err
 		}
-		log.Printf("New task  %+v created, rows affected: %d", task, rowsAffected)
+		log.Printf("New tag  %+v created, rows affected: %d", tag, rowsAffected)
 	}
 
 	if err := tx.Commit(); err != nil {

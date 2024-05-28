@@ -50,6 +50,20 @@ func serveSwagger(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func setJsonApplicationHeader(handler http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func enableCors(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		handler.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -73,12 +87,13 @@ func main() {
 		taskService := services.NewTaskService(db)
 		taskController := controllers.NewTaskController(taskService)
 
-		mux.HandleFunc("GET /task", taskController.GetAllTasksController)
-		mux.HandleFunc("GET /task/{id}", taskController.GetTask)
-		mux.HandleFunc("POST /task", taskController.CreateTask)
+		mux.Handle("GET /task/{userId}", enableCors(setJsonApplicationHeader(taskController.GetAllTasksController)))
+		mux.Handle("GET /task", enableCors(setJsonApplicationHeader(taskController.GetTask)))
+		mux.Handle("POST /task", enableCors(setJsonApplicationHeader(taskController.CreateTask)))
 
-		mux.HandleFunc("GET /tag", TagController.GetAllTags)
-		mux.HandleFunc("/doc", serveSwagger)
+		mux.Handle("GET /tag/{userId}", enableCors(setJsonApplicationHeader(TagController.GetAllTags)))
+		mux.Handle("POST /tag", enableCors(setJsonApplicationHeader(TagController.CreateNewTag)))
+		mux.Handle("/doc", enableCors(setJsonApplicationHeader(serveSwagger)))
 		/* mux.HandleFunc("POST /task", controllers.PostTask) */
 
 		if err := http.ListenAndServe("localhost:"+os.Getenv("PORT"), mux); err != nil {
