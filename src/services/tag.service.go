@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	dto "pompom/go/src/dto"
 	model "pompom/go/src/model"
@@ -8,12 +9,63 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+type TagService interface {
+	GetAllTags(userId int) ([]model.Tag, error)
+	CreateManyTags(tags []dto.Tag) error
+	CreateNewTag(tag model.TagToCreate) error
+	DeleteTag(tagId int) (int, error)
+	UpdateTag(tagToUpdate model.TagToUpdate) (model.Tag, error)
+}
+
 type TagDb struct {
 	DB *sqlx.DB
 }
 
-func NewTagService(db *sqlx.DB) model.TagService {
+func NewTagService(db *sqlx.DB) TagService {
 	return &TagDb{DB: db}
+}
+
+func (c *TagDb) DeleteTag(tagId int) (int, error) {
+	res, err := c.DB.Exec("DELETE FROM tag WHERE id = $1", tagId)
+	if err != nil {
+		return 0, err
+	}
+	count, err := res.RowsAffected()
+	return int(count), err
+}
+
+func (c *TagDb) UpdateTag(tagToUpdate model.TagToUpdate) (model.Tag, error) {
+	var updatedTag model.Tag
+
+	query := `
+        UPDATE tag 
+        SET name = :name, color = :color 
+        WHERE id = :id
+        RETURNING id, name, color, userid
+    `
+
+	params := map[string]interface{}{
+		"name":  tagToUpdate.Name,
+		"color": tagToUpdate.Color,
+		"id":    tagToUpdate.Id,
+	}
+	rows, err := c.DB.NamedQuery(query, params)
+	if err != nil {
+		return model.Tag{}, err
+	}
+	defer rows.Close()
+
+	// Fetch the updated row
+	if rows.Next() {
+		err = rows.StructScan(&updatedTag)
+		if err != nil {
+			return model.Tag{}, err
+		}
+	} else {
+		return model.Tag{}, fmt.Errorf("no tag found with id %d", tagToUpdate.Id)
+	}
+
+	return updatedTag, nil
 }
 
 func (c *TagDb) GetAllTags(userId int) ([]model.Tag, error) {
@@ -28,8 +80,8 @@ func (c *TagDb) GetAllTags(userId int) ([]model.Tag, error) {
 	return tags, err
 }
 
-func (c *TagDb) CreateNewTag(tag dto.Tag) error {
-	sqlStatement := `INSERT INTO tag (name, color) VALUES (:name, :color) RETURNING *`
+func (c *TagDb) CreateNewTag(tag model.TagToCreate) error {
+	sqlStatement := `INSERT INTO tag (name, color, userid) VALUES (:name, :color, :userid) RETURNING *`
 	namedStmt, err := c.DB.PrepareNamed(sqlStatement)
 	if err != nil {
 		log.Printf("Failed to prepare named statement: %s", err)
@@ -39,10 +91,6 @@ func (c *TagDb) CreateNewTag(tag dto.Tag) error {
 	namedStmt.Exec(tag)
 	return nil
 }
-
-/* func (c *TagDb) DeleteTag(id int) error {
-	sqlStatement := `DELETE ...`
-} */
 
 func (c *TagDb) CreateManyTags(tags []dto.Tag) error {
 	tx, err := c.DB.Beginx()

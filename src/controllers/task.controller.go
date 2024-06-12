@@ -4,17 +4,66 @@ import (
 	"encoding/json"
 	"net/http"
 	"pompom/go/src/dto"
-	model "pompom/go/src/model"
+	"pompom/go/src/model"
+	service "pompom/go/src/services"
 	"strconv"
 	"time"
 )
 
-type TaskController struct {
-	Service model.TaskService
+type FinalTask struct {
+	model.Task
+	Tags []model.Tag `json:"tags"`
 }
 
-func NewTaskController(s model.TaskService) *TaskController {
-	return &TaskController{Service: s}
+type ErrorString struct {
+	Error string `json:"error"`
+}
+
+func formatTasks(tasks []model.TaskToSend) interface{} {
+	if len(tasks) == 0 {
+		return ErrorString{
+			Error: "You do not have any tasks",
+		}
+	}
+
+	finaltasks := []FinalTask{}
+
+	for _, val := range tasks {
+		found := false
+		for a := 0; a < len(finaltasks); a++ {
+			if val.ID == finaltasks[a].Task.ID {
+				finaltasks[a].Tags = append(finaltasks[a].Tags, val.Tag)
+				found = true
+				break
+			}
+		}
+		if !found {
+			newTask := FinalTask{
+				Task: model.Task{
+					ID: val.ID,
+					TaskToCreate: model.TaskToCreate{
+						Name:        val.Name,
+						Date:        val.Date,
+						Duration:    val.Duration,
+						Description: val.Description,
+					},
+				},
+				Tags: []model.Tag{val.Tag},
+			}
+			finaltasks = append(finaltasks, newTask)
+		}
+	}
+
+	return finaltasks
+}
+
+type TaskController struct {
+	TaskService      service.TaskService
+	TagToTaskService service.TagToTaskService
+}
+
+func NewTaskController(taskService service.TaskService, tagToTaskService service.TagToTaskService) *TaskController {
+	return &TaskController{TaskService: taskService, TagToTaskService: tagToTaskService}
 }
 
 func (tc TaskController) GetAllTasksController(w http.ResponseWriter, r *http.Request) {
@@ -24,11 +73,12 @@ func (tc TaskController) GetAllTasksController(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Invalid ID format", http.StatusBadRequest)
 		return
 	}
-	tasks, err := tc.Service.GetAll(userId)
+	tasks, err := tc.TaskService.GetAll(service.TaskParams{UserID: userId})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	if err := json.NewEncoder(w).Encode(tasks); err != nil {
+	orderedTask := formatTasks(tasks)
+	if err := json.NewEncoder(w).Encode(orderedTask); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -36,28 +86,36 @@ func (tc TaskController) GetAllTasksController(w http.ResponseWriter, r *http.Re
 
 func (tc TaskController) GetTask(w http.ResponseWriter, r *http.Request) {
 
-	idStr := r.PathValue("id")
-	id, err := strconv.Atoi(idStr)
+	userIdStr := r.PathValue("userId")
+	userId, err := strconv.Atoi(userIdStr)
 	if err != nil {
 		http.Error(w, "Invalid ID format", http.StatusBadRequest)
 		return
 	}
-	task, err := tc.Service.Get(id)
+	taskIdStr := r.PathValue("taskId")
+	taskId, err := strconv.Atoi(taskIdStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+	task, err := tc.TaskService.GetAll(service.TaskParams{UserID: userId, TaskID: &taskId})
+	orderedTask := formatTasks(task)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	if err := json.NewEncoder(w).Encode(task); err != nil {
+	if err := json.NewEncoder(w).Encode(orderedTask); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }
 
 type TaskToCreate struct {
-	Name        string `json:"name"`
+	Name        string `json:"name" validate:"required,min=1"`
 	Description string `json:"description,omitempty"`
-	Duration    int64  `json:"duration"`
-	TagId       int64  `json:"tagId"`
+	Duration    int64  `json:"duration" validate:"required,min=1"`
+	TagId       []int  `json:"tagId"`
 	Date        int64  `json:"date"`
+	UserId      int    `json:"userid"`
 }
 
 func ConvertMilliToTime(milliseconds int64) time.Time {
@@ -77,13 +135,20 @@ func (tc TaskController) CreateTask(w http.ResponseWriter, r *http.Request) {
 		Name:        t.Name,
 		Description: t.Description,
 		Duration:    t.Duration,
-		TagId:       t.TagId,
+		UserId:      t.UserId,
 	}
-	createdTask, err := tc.Service.Create(taskToCreate)
+
+	createdTask, err := tc.TaskService.Create(taskToCreate)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	if err := json.NewEncoder(w).Encode(createdTask); err != nil {
+
+	tagToTask, err := tc.TagToTaskService.CreateTagToTask(createdTask, t.TagId)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(tagToTask); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
