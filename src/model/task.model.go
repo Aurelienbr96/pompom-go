@@ -1,7 +1,6 @@
 package model
 
 import (
-	taskDTO "pompom/go/src/dto"
 	"time"
 )
 
@@ -19,7 +18,7 @@ type TaskToCreate struct {
 	Date        time.Time `db:"date" json:"date"`
 	Duration    int64     `db:"duration" json:"duration"`
 	Description string    `db:"description" json:"description,omitempty"`
-	TagId       int64     `db:"tagid" json:"tagid"`
+	UserId      int64     `db:"userid" json:"userid"`
 }
 
 type ExtendedTask struct {
@@ -33,15 +32,12 @@ type Stat struct {
 	Total_duration int64  `json:"total_duration"`
 }
 
+type TaskToSend struct {
+	Task
+	Tag Tag `json:"tag"`
+}
+
 type ExtendedTaskWithStats struct {
 	ExtendedTask  []ExtendedTask `json:"extended_task"`
 	TaskStatistic []Stat         `json:"task_statistic"`
-}
-
-type TaskService interface {
-	GetAll(userId int) (ExtendedTaskWithStats, error)
-	Get(id int) (Task, error)
-	Create(task taskDTO.Task) (Task, error)
-	DeleteAllTasks() error
-	CreateMany(task []taskDTO.Task) error
 }

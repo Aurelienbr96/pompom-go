@@ -3,7 +3,6 @@ package seed
 import (
 	"log"
 	dto "pompom/go/src/dto"
-	taskModel "pompom/go/src/model"
 	services "pompom/go/src/services"
 	"strconv"
 
@@ -15,7 +14,7 @@ func generateTasks(row int) []dto.Task {
 	createdTasks := make([]dto.Task, row)
 	for i := 0; i < len(createdTasks); i++ {
 		createdTasks[i] = dto.Task{
-			Name: "name" + strconv.Itoa(i), Description: "description" + strconv.Itoa(i), TagId: int64(i + 1), Duration: int64(i),
+			Name: "name" + strconv.Itoa(i), Description: "description" + strconv.Itoa(i), Duration: int64(i),
 		}
 	}
 	return createdTasks
@@ -30,11 +29,11 @@ func generateTag(name string, color string) dto.Tag {
 }
 
 type TaskService struct {
-	Service taskModel.TaskService
+	Service services.TaskService
 	DB      *sqlx.DB
 }
 
-func NewSeedService(s taskModel.TaskService, db *sqlx.DB) *TaskService {
+func NewSeedService(s services.TaskService, db *sqlx.DB) *TaskService {
 	return &TaskService{DB: db, Service: s}
 }
 

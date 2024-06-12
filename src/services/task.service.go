@@ -3,73 +3,126 @@ package services
 import (
 	"log"
 	taskDTO "pompom/go/src/dto"
-	taskModel "pompom/go/src/model"
+	model "pompom/go/src/model"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
+
+type TaskService interface {
+	GetAll(params TaskParams) ([]model.TaskToSend, error)
+	Get(id int) (model.Task, error)
+	Create(task taskDTO.Task) (model.Task, error)
+	DeleteAllTasks() error
+	CreateMany(task []taskDTO.Task) error
+}
 
 type TaskDb struct {
 	DB *sqlx.DB
 }
 
-func NewTaskService(db *sqlx.DB) taskModel.TaskService {
+func NewTaskService(db *sqlx.DB) TaskService {
 	return &TaskDb{DB: db}
 }
 
-func (c *TaskDb) GetAll(userId int) (taskModel.ExtendedTaskWithStats, error) {
-	tasks := taskModel.ExtendedTaskWithStats{}
-	err := c.DB.Select(&tasks.ExtendedTask, `
-  SELECT 
-    task.id, 
-    task.name, 
-    task.duration, 
-    task.description, 
-    tag.color, 
-    task.tagId, 
-    task.date 
-  FROM 
-    task 
-  LEFT JOIN 
-    tag 
-  ON 
-    tag.id = task.tagId
-	WHERE 
-		task.userid = $1
-  ORDER BY 
-    task.date DESC
-`, userId)
-	if err != nil {
-		log.Fatalf("Error during query: %s", err)
-	}
-
-	var ids []int64
-	for _, sec := range tasks.ExtendedTask {
-		ids = append(ids, sec.TagId)
-	}
-
-	query, args, err := sqlx.In(`
-		SELECT 
-			tag.id as id, 
-			tag.name, 
-			SUM(task.duration) as Total_duration 
-		FROM task 
-		JOIN tag ON tag.id = task.tagId 
-		WHERE tag.id IN (?) 
-		GROUP BY tag.id, tag.name`, ids)
-	if err != nil {
-		log.Print("Error during query: %s", err)
-	}
-	query = c.DB.Rebind(query)
-	err = c.DB.Select(&tasks.TaskStatistic, query, args...)
-	if err != nil {
-		log.Printf("Error during query: %s", err)
-		return tasks, err
-	}
-	return tasks, err
+type TaskParams struct {
+	UserID int
+	TaskID *int
 }
 
-func (c *TaskDb) Get(id int) (taskModel.Task, error) {
-	task := taskModel.Task{}
+func (c *TaskDb) GetAll(params TaskParams) ([]model.TaskToSend, error) {
+	queryBase := `
+    SELECT 
+        task.id AS task_id, 
+        task.name AS task_name, 
+        task.duration AS task_duration, 
+        task.description AS task_description, 
+				task.userid AS user_id,
+        task.date AS task_date,
+        tag.id AS tag_id,
+        tag.name AS tag_name,
+        tag.color AS tag_color,
+        tag.userid AS tag_userid
+    FROM 
+        task 
+    LEFT JOIN 
+        tagtotask 
+    ON 
+        task.id = tagtotask.taskid
+    LEFT JOIN
+        tag
+    ON
+        tagtotask.tagid = tag.id
+    WHERE 
+        task.userid = $1
+    `
+
+	var queryParams []interface{}
+	queryParams = append(queryParams, params.UserID)
+
+	if params.TaskID != nil {
+		queryBase += " AND task.id = $2"
+		queryParams = append(queryParams, *params.TaskID)
+	}
+
+	queryBase += " ORDER BY task.date DESC"
+
+	rows, err := c.DB.Queryx(queryBase, queryParams...)
+	if err != nil {
+		return []model.TaskToSend{}, err
+	}
+	defer rows.Close()
+
+	var tasks []model.TaskToSend
+
+	for rows.Next() {
+		var taskTag struct {
+			TaskID          int64     `db:"task_id"`
+			TaskName        string    `db:"task_name"`
+			TaskDuration    int64     `db:"task_duration"`
+			TaskDescription string    `db:"task_description"`
+			UserID          int64     `db:"user_id"`
+			TaskDate        time.Time `db:"task_date"`
+			TagID           int       `db:"tag_id"`
+			TagName         string    `db:"tag_name"`
+			TagColor        string    `db:"tag_color"`
+			TagUserID       int64     `db:"tag_userid"`
+		}
+
+		err := rows.StructScan(&taskTag)
+		if err != nil {
+			return []model.TaskToSend{}, err
+		}
+
+		task := model.TaskToSend{
+			Task: model.Task{
+				ID: taskTag.TaskID,
+
+				TaskToCreate: model.TaskToCreate{
+					Name:        taskTag.TaskName,
+					Date:        taskTag.TaskDate,
+					Duration:    taskTag.TaskDuration,
+					Description: taskTag.TaskDescription,
+					UserId:      taskTag.UserID,
+				},
+			},
+			Tag: model.Tag{
+				ID: int64(taskTag.TagID),
+				TagToCreate: model.TagToCreate{
+					Name:  taskTag.TagName,
+					Color: taskTag.TagColor,
+				},
+			},
+		}
+		tasks = append(tasks, task)
+
+	}
+
+	return tasks, nil
+}
+
+func (c *TaskDb) Get(id int) (model.Task, error) {
+	task := model.Task{}
 	err := c.DB.Get(&task, "SELECT * FROM task WHERE id = $1", id)
 	if err != nil {
 		log.Fatalf("Error during query: %s", err)
@@ -78,15 +131,15 @@ func (c *TaskDb) Get(id int) (taskModel.Task, error) {
 	return task, err
 }
 
-func (c *TaskDb) Create(task taskDTO.Task) (taskModel.Task, error) {
+func (c *TaskDb) Create(task taskDTO.Task) (model.Task, error) {
 
-	var newTask taskModel.Task
-	sqlStatement := `INSERT INTO task (name, description, tagid, duration, date) VALUES (:name, :description, :tagid, :duration, :date) RETURNING *`
+	var newTask model.Task
+	sqlStatement := `INSERT INTO task (name, description, duration, date, userid) VALUES (:name, :description, :duration, :date, :userid) RETURNING *`
 
 	namedStmt, err := c.DB.PrepareNamed(sqlStatement)
 	if err != nil {
 		log.Printf("Failed to prepare named statement: %s", err)
-		return taskModel.Task{}, err
+		return model.Task{}, err
 	}
 	defer namedStmt.Close()
 
@@ -94,12 +147,12 @@ func (c *TaskDb) Create(task taskDTO.Task) (taskModel.Task, error) {
 		Name:        task.Name,
 		Description: task.Description,
 		Duration:    task.Duration,
-		TagId:       task.TagId,
 		Date:        task.Date,
+		UserId:      task.UserId,
 	})
 	if err != nil {
 		log.Printf("Failed to execute named statement: %s", err)
-		return taskModel.Task{}, err
+		return model.Task{}, err
 	}
 
 	return newTask, nil
